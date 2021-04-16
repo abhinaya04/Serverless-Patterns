@@ -24,3 +24,20 @@ resources:
       Type: "AWS::SQS::Queue"
       Properties:
         QueueName: "MyQueue"
+
+    SampleSQSPolicy: 
+      Type: AWS::SQS::QueuePolicy
+      Properties: 
+        Queues: 
+          - !Ref MyQueue
+        PolicyDocument: 
+          Statement: 
+            - 
+              Action: 
+                - "SQS:SendMessage" 
+                - "SQS:ReceiveMessage"
+              Effect: "Allow"
+              Resource: !GetAtt MyQueue.Arn
+              Principal:  
+                AWS: 
+                  - !Ref "AWS::AccountId"
