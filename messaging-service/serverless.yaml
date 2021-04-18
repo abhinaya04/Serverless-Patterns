@@ -1,61 +1,144 @@
-service: sqs
+service: sqs-sns
 
 provider:
   name: aws
-  runtime: nodejs12.x
   stage: dev
   region: us-east-1
-  memorySize: 512
-  timeout: 10 
-  
+
 functions:
   publisher:
     handler: publisher.handler
     environment:
-      SQSqueueName: !Ref MyQueue
+      SQSqueueName: !Ref firstQueue
     events:
       - sqs:
           arn:
             Fn::GetAtt:
-              - MyQueue
+              - firstQueue
               - Arn
           batchSize: 10
 
   consumer:
     handler: consumer.handler
     environment:
-      SQSqueueName: !Ref MyQueue
+      SQSqueueName: !Ref firstQueue
     events:
       - sqs:
           arn:
             Fn::GetAtt:
-              - MyQueue
+              - firstQueue
               - Arn
           batchSize: 10
 
 resources:
-  Resources:
-    MyQueue:
+  Resources: 
+ 
+  ### PART ONE: Create SNS Topic and SQS Queues
+ 
+    # Create our SNS Topic
+    mySnsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${self:provider.stage}-my-sns-topic
+ 
+    # Create our 'firstQueue' SQS queue
+    firstQueue:
       Type: "AWS::SQS::Queue"
       Properties:
-        QueueName: "MyQueue"
-
-    SampleSQSPolicy: 
+        QueueName: ${self:service}-${self:provider.stage}-first-queue
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt
+            - firstQueueDLQ
+            - Arn
+          maxReceiveCount: 3
+ 
+    # Create our 'firstQueue' Dead Letter Queue SQS queue
+    firstQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-first-queue-dlq
+ 
+    # Create our 'secondQueue' SQS queue
+    secondQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-second-queue
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt
+            - secondQueueDLQ
+            - Arn
+          maxReceiveCount: 3
+ 
+    # Create our 'secondQueue' Dead Letter Queue SQS queue
+    secondQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-second-queue-dlq 
+ 
+ 
+  ### PART TWO: Create SQS Queue Policies
+ 
+    # Create our queue policy for the 'firstQueue'
+    snsToFirstQueueSqsPolicy:
       Type: AWS::SQS::QueuePolicy
-      Properties: 
-        Queues: 
-          - !Ref MyQueue
-        PolicyDocument: 
-          Statement: 
-            - 
-              Action: 
-                - "SQS:SendMessage" 
-                - "SQS:ReceiveMessage"
-                - "SQS:ChangeMessageVisibility"
-                - "SQS:DeleteMessage"
-                - "SQS:GetQueueAttributes"
-              Effect: "Allow"
-              Resource: !GetAtt MyQueue.Arn
-              Principal:  
-                AWS: 
-                  - !Ref "AWS::AccountId"
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: Allow
+              Principal: "*"
+              Resource: !GetAtt
+                - firstQueue
+                - Arn
+              Action: "SQS:SendMessage"
+              Condition:
+                ArnEquals:
+                  "aws:SourceArn": !Ref mySnsTopic
+        Queues:
+          - Ref: firstQueue
+ 
+    # Create our queue policy for the 'secondQueue'
+    snsToSecondQueueSqsPolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: Allow
+              Principal: "*"
+              Resource: !GetAtt
+                - secondQueue
+                - Arn
+              Action: "SQS:SendMessage"
+              Condition:
+                ArnEquals:
+                  "aws:SourceArn": !Ref mySnsTopic
+        Queues:
+          - Ref: secondQueue
+ 
+ 
+  ### PART THREE: Subscribe our SQS Queues to our SNS Topic 
+ 
+    # Create the subscription to the 'firstQueue'
+    firstQueueSubscription:
+      Type: 'AWS::SNS::Subscription'
+      Properties:
+        TopicArn: !Ref mySnsTopic
+        Endpoint: !GetAtt
+          - firstQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: 'true'
+ 
+    # Create the subscription to the 'secondQueue'
+    secondQueueSubscription:
+      Type: 'AWS::SNS::Subscription'
+      Properties:
+        TopicArn: !Ref mySnsTopic
+        Endpoint: !GetAtt
+          - secondQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: 'true'
