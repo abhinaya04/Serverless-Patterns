@@ -142,3 +142,49 @@ resources:
           - Arn
         Protocol: sqs
         RawMessageDelivery: 'true'
+
+      DlqAlarmEmail:
+      Type: AWS::SNS::Topic
+      Properties:
+          Subscription:
+              -   Endpoint: abhinayatrash@gmail.com
+                  Protocol: email
+
+      FirstQueueDlqAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            AlarmName: firstQueueDLQ-Alarm
+            AlarmDescription: 'There are failed messages in the dead letter queue.'
+            Namespace: AWS/SQS
+            MetricName: ApproximateNumberOfMessagesVisible
+            Dimensions:
+                -   Name: QueueName
+                    Value: !GetAtt firstQueueDLQ.QueueName
+            Statistic: Sum
+            Period: 60
+            EvaluationPeriods: 1
+            Threshold: 0
+            ComparisonOperator: GreaterThanThreshold
+            AlarmActions:
+                - !Ref DlqAlarmEmail
+
+      SecondQueueDlqAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            AlarmName: secondQueueDLQ-Alarm
+            AlarmDescription: 'There are failed messages in the dead letter queue.'
+            Namespace: AWS/SQS
+            MetricName: ApproximateNumberOfMessagesVisible
+            Dimensions:
+                -   Name: QueueName
+                    Value: !GetAtt secondQueueDLQ.QueueName
+            Statistic: Sum
+            Period: 60
+            EvaluationPeriods: 1
+            Threshold: 0
+            ComparisonOperator: GreaterThanThreshold
+            AlarmActions:
+                - !Ref DlqAlarmEmail
+
+
+
